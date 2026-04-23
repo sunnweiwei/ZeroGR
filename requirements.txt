@@ -1,0 +1,9 @@
+torch>=2.1
+transformers>=4.44
+accelerate>=0.33
+vllm>=0.6.0
+liger-kernel>=0.3
+datasets>=2.19
+tqdm
+numpy
+wandb

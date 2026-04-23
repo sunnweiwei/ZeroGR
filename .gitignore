@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+.eggs/
+build/
+dist/
+.Python
+.ipynb_checkpoints/
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Project artifacts
+models/
+dataset/
+log/
+logs/
+outputs/
+checkpoints/
+wandb/
+*.pkl
+*.bin
+*.pt
+*.ckpt
+*.safetensors
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
