@@ -61,28 +61,34 @@ cd ZeroGR
 pip install -r requirements.txt
 ```
 
-Key dependencies: `torch`, `transformers`, `accelerate`, `vllm`, `liger-kernel`, `datasets`, `wandb`, `tqdm`, `numpy`.
+Key dependencies: `torch`, `transformers`, `accelerate`, `vllm`, `liger-kernel`, `datasets`, `bm25s`, `wandb`, `tqdm`, `numpy`.
 
-## Datasets
+## Datasets & Pretrained Checkpoints
 
-ZeroGR is trained and evaluated on the [MAIR](https://huggingface.co/datasets/MAIR-Bench/MAIR-Docs) benchmark, which spans 6 domains (Medical, Financial, Academic, Coding, Legal, Web-based) and 69 IR tasks. Download the following to `dataset/`:
+ZeroGR's generators are instruction-tuned on **OpenInstIR** and evaluated on the [MAIR](https://huggingface.co/datasets/MAIR-Bench/MAIR-Docs) and [BEIR](https://github.com/beir-cellar/beir) benchmarks:
 
-| Resource      | Source                                                               |
-|---------------|----------------------------------------------------------------------|
-| MAIR-Docs     | <https://huggingface.co/datasets/MAIR-Bench/MAIR-Docs>               |
-| MAIR-Queries  | <https://huggingface.co/datasets/MAIR-Bench/MAIR-Queries>            |
-| MAIR-Data     | Generated pseudo-queries and DocIDs (produced by this pipeline)      |
+| Resource            | Source                                                               |
+|---------------------|----------------------------------------------------------------------|
+| **OpenInstIR**      | <https://huggingface.co/datasets/luxinyayaya/OpenInstIR>             |
+| MAIR-Docs           | <https://huggingface.co/datasets/MAIR-Bench/MAIR-Docs>               |
+| MAIR-Queries        | <https://huggingface.co/datasets/MAIR-Bench/MAIR-Queries>            |
+| MAIR-Data           | Generated pseudo-queries and DocIDs (produced by this pipeline)      |
+| **Query Generator** | <https://huggingface.co/luxinyayaya/ZeroGR-Query-Generator>          |
+| **DocID Generator** | <https://huggingface.co/luxinyayaya/ZeroGR-DocID-Generator>          |
 
-Expected layout:
+Expected layout for MAIR indexing & evaluation (automatically downloaded from `MAIR-Bench` on first run):
 
 ```
 dataset/
 ├── MAIR-Docs/<task>/docs.jsonl
 ├── MAIR-Queries/<task>/queries.jsonl
-└── MAIR-Data/<model_sufix>-<num_q>/<task>/queries.jsonl
+└── MAIR-Data/
+    ├── <model_sufix>-<num_q>/<task>/queries.jsonl
+    ├── DocAsQ-16/<task>/queries.jsonl
+    └── gist_ids/<task>/title.jsonl
 ```
 
-ZeroGR-Train statistics (Table 1 of the paper):
+**OpenInstIR** statistics (Table 1 of the paper — 69 tasks across 6 domains, 41,572,884 raw query-document pairs; the default Hugging Face config provides the memory-mapped SFT-balanced split of 2,143,498 pairs across all 69 tasks alongside full unsampled shards):
 
 | Domain     | #Tasks | #Samples   |
 |------------|-------:|-----------:|
@@ -93,6 +99,8 @@ ZeroGR-Train statistics (Table 1 of the paper):
 | Legal      | 7      | 23,086,948 |
 | Web-based  | 18     | 15,319,445 |
 
+*(Note: Table 1 reports all 69 tasks in OpenInstIR; Appendix A omits 4 small sub-tasks in Table 5 for space, and Figure 2 plots the ~60-task incremental stage in the multi-stage scaling ablation on the unseen-dev set.)*
+
 Evaluation: [BEIR](https://github.com/beir-cellar/beir) (12 tasks) and MAIR (seen / unseen splits).
 
 ## Usage
@@ -102,14 +110,14 @@ The pipeline follows the *Document Indexing → Document Retrieval* workflow.
 ### 1. Train and run the Query Generator
 
 ```bash
-# Fine-tune a Llama-3.2-1B-Instruct model for pseudo-query generation (<1 day on 8×A800)
+# Fine-tune Llama-3.2-1B-Instruct on OpenInstIR (5 epochs, memory-mapped via Hugging Face datasets)
 python sftqg.py
 
-# Generate pseudo-queries with vLLM (<1 day on 8×A800)
-python qg_vllm.py
+# Or run batched pseudo-query generation directly with our released checkpoint (<1 day on 8×A800)
+python qg_vllm.py -data_name ArguAna -model_name luxinyayaya/ZeroGR-Query-Generator -num_q 16
 ```
 
-Inference can also be launched per-task / per-GPU via CLI:
+Inference can also be sharded per-task / per-GPU via CLI:
 
 ```bash
 python qg_vllm.py \
@@ -117,25 +125,25 @@ python qg_vllm.py \
   -data_name <task> \
   -pid 0 -total_num 8 \
   -model_sufix QG \
-  -model_name models/Llama-3.2-1B-Instruct-qg \
+  -model_name luxinyayaya/ZeroGR-Query-Generator \
   -num_q 16
 ```
 
 ### 2. Train and run the DocID Generator
 
 ```bash
-# Fine-tune a Llama-3.2-1B-Instruct model for unified DocID generation (<1 day on 8×A800)
+# Fine-tune unified DocID generator
 python sftid.py
 
-# Generate DocIDs with vLLM (<1 day on 8×A800)
-python title_vllm.py
+# Or generate DocIDs directly with our released checkpoint -> dataset/MAIR-Data/gist_ids/<task>/title.jsonl
+python title_vllm.py -data_name ArguAna -model_name luxinyayaya/ZeroGR-DocID-Generator -num_q 1
 ```
 
 ### 3. Train and evaluate the Generative Retriever
 
 ```bash
-# End-to-end training + evaluation; ~2 weeks on 8×A800 for the full ZeroGR-3B run
-python genir.py
+# End-to-end indexing, training + reverse-annealed decoding evaluation
+python genir.py --tasks ArguAna --qg_path QG-16 --gist_type title
 ```
 
 `genir.py` contains the core components: the constrained prefix-tree decoder, the reverse-annealed sampler (Eq. 5-6 of the paper), indexing, and evaluation (Acc@1, nDCG@10, Recall@100).

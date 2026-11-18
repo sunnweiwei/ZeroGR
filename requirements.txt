@@ -4,6 +4,8 @@ accelerate>=0.33
 vllm>=0.6.0
 liger-kernel>=0.3
 datasets>=2.19
+bm25s>=0.2.0
+scipy
 tqdm
 numpy
 wandb
